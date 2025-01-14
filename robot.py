@@ -69,6 +69,16 @@ class Robot(Job):
                 self.chat = None
 
         self.LOG.info(f"已选择: {self.chat}")
+        
+        self.commands = {
+            '/h': self.show_help,
+            '/help': self.show_help,
+            '/c': self.clear_chat_history,
+            '/clear': self.clear_chat_history,
+            '/w': self.get_weather,
+            '/weather': self.get_weather,
+            '^更新$': self.update_config
+        }
 
     @staticmethod
     def value_check(args: dict) -> bool:
@@ -110,12 +120,102 @@ class Robot(Job):
 
         return status
 
-    def toChitchat(self, msg: WxMsg) -> bool:
-        """闲聊，接入 ChatGPT
+    def handle_command(self, msg: WxMsg) -> bool:
+        """统一处理所有命令
+        返回True表示已处理命令，False表示不是命令
         """
-        if not self.chat:  # 没接 ChatGPT，固定回复
+        content = msg.content.strip().lower()
+        command = content.split()[0] if content else ''
+        
+        if command in self.commands:
+            self.commands[command](msg)
+            return True
+            
+        return False
+  
+    def show_help(self, msg: WxMsg) -> None:
+        """显示帮助信息"""
+        help_text = (
+            "🤖 可用指令：\n"
+            "- /h 或 /help：显示帮助信息\n"
+            "- /c 或 /clear：清空当前对话历史\n"
+            "- /w <city>或 /weather <city>：显示当前天气(default: 北京)"
+        )
+        if msg.from_group():
+            self.sendTextMsg(help_text, msg.roomid, msg.sender)
+        else:
+            self.sendTextMsg(help_text, msg.sender)  
+ 
+    def clear_chat_history(self, msg: WxMsg) -> None:
+        """清空聊天历史"""
+        if self.chat:
+            chat_id = msg.roomid if msg.from_group() else msg.sender
+            if hasattr(self.chat, 'converstion_list'):
+                system_prompt = self.chat.system_prompt
+                self.chat.converstion_list[chat_id] = [system_prompt] if system_prompt else []
+            clear_text = "✨ 已清空对话历史"
+            if msg.from_group():
+                self.sendTextMsg(clear_text, msg.roomid, msg.sender)
+            else:
+                self.sendTextMsg(clear_text, msg.sender)
+                
+    def get_weather(self, msg: WxMsg) -> None:
+        """获取天气信息"""
+        try:
+            from base.func_weather import Weather
+            weather = Weather()
+            
+            parts = msg.content.strip().split()
+            city = parts[1] if len(parts) > 1 else "北京"
+            
+            weather_info = weather.get_weather(city)
+            if msg.from_group():
+                self.sendTextMsg(weather_info, msg.roomid, msg.sender)
+            else:
+                self.sendTextMsg(weather_info, msg.sender)
+        except Exception as e:
+            error_msg = f"获取天气信息失败: {str(e)}"
+            self.LOG.error(error_msg)
+            if msg.from_group():
+                self.sendTextMsg(error_msg, msg.roomid, msg.sender)
+            else:
+                self.sendTextMsg(error_msg, msg.sender)
+
+    def update_config(self, msg: WxMsg) -> None:
+        """更新配置"""
+        if msg.from_self():
+            self.config.reload()
+            self.LOG.info("已更新")
+ 
+    def processMsg(self, msg: WxMsg) -> None:
+        """处理消息的主函数"""
+        # 群聊消息
+        if msg.from_group():
+            if msg.roomid not in self.config.GROUPS:
+                return
+
+            if msg.is_at(self.wxid):
+                self.toAt(msg)
+            else:
+                self.toChengyu(msg)
+            return
+
+        # 非群聊消息处理
+        if msg.type == 37:  # 好友请求
+            self.autoAcceptFriendRequest(msg)
+        elif msg.type == 10000:  # 系统信息
+            self.sayHiToNewFriend(msg)
+        elif msg.type == 0x01:  # 文本消息
+            # 先检查是否是命令
+            if not self.handle_command(msg):
+                # 不是命令则当作普通消息处理
+                self.toChitchat(msg) 
+    
+    def toChitchat(self, msg: WxMsg) -> bool:
+        """处理普通对话"""
+        if not self.chat:
             rsp = "你@我干嘛？"
-        else:  # 接了 ChatGPT，智能回复
+        else:
             q = re.sub(r"@.*?[\u2005|\s]", "", msg.content).replace(" ", "")
             rsp = self.chat.get_answer(q, (msg.roomid if msg.from_group() else msg.sender))
 
@@ -124,51 +224,11 @@ class Robot(Job):
                 self.sendTextMsg(rsp, msg.roomid, msg.sender)
             else:
                 self.sendTextMsg(rsp, msg.sender)
-
             return True
         else:
-            self.LOG.error(f"无法从 ChatGPT 获得答案")
+            self.LOG.error("无法从大模型获得答案")
             return False
-
-    def processMsg(self, msg: WxMsg) -> None:
-        """当接收到消息的时候，会调用本方法。如果不实现本方法，则打印原始消息。
-        此处可进行自定义发送的内容,如通过 msg.content 关键字自动获取当前天气信息，并发送到对应的群组@发送者
-        群号：msg.roomid  微信ID：msg.sender  消息内容：msg.content
-        content = "xx天气信息为："
-        receivers = msg.roomid
-        self.sendTextMsg(content, receivers, msg.sender)
-        """
-
-        # 群聊消息
-        if msg.from_group():
-            # 如果在群里被 @
-            if msg.roomid not in self.config.GROUPS:  # 不在配置的响应的群列表里，忽略
-                return
-
-            if msg.is_at(self.wxid):  # 被@
-                self.toAt(msg)
-
-            else:  # 其他消息
-                self.toChengyu(msg)
-
-            return  # 处理完群聊信息，后面就不需要处理了
-
-        # 非群聊信息，按消息类型进行处理
-        if msg.type == 37:  # 好友请求
-            self.autoAcceptFriendRequest(msg)
-
-        elif msg.type == 10000:  # 系统信息
-            self.sayHiToNewFriend(msg)
-
-        elif msg.type == 0x01:  # 文本消息
-            # 让配置加载更灵活，自己可以更新配置。也可以利用定时任务更新。
-            if msg.from_self():
-                if msg.content == "^更新$":
-                    self.config.reload()
-                    self.LOG.info("已更新")
-            else:
-                self.toChitchat(msg)  # 闲聊
-
+        
     def onMsg(self, msg: WxMsg) -> int:
         try:
             self.LOG.info(msg)  # 打印信息
@@ -263,3 +323,24 @@ class Robot(Job):
         news = News().get_important_news()
         for r in receivers:
             self.sendTextMsg(news, r)
+
+    def weatherReport(self) -> None:
+        """每日天气播报"""
+        try:
+            from base.func_weather import Weather
+            weather = Weather()
+            weather_info = weather.get_weather()
+            
+            # 获取接收人
+            receivers = self.config.NEWS  # 使用配置文件中的接收者列表
+            if not receivers:
+                receivers = ["filehelper"]  # 如果没有配置接收者，默认发送给文件传输助手
+                
+            # 发送天气信息
+            for receiver in receivers:
+                self.sendTextMsg(weather_info, receiver)
+                
+        except Exception as e:
+            error_msg = f"发送天气预报失败: {str(e)}"
+            self.LOG.error(error_msg)
+            self.sendTextMsg(error_msg, "filehelper")

@@ -15,3 +15,5 @@ zhdate
 ipykernel
 google-generativeai
 zhipuai
+requests
+beautifulsoup4
