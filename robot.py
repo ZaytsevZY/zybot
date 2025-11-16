@@ -313,7 +313,20 @@ class Robot(Job):
         if nickName:
             # 添加了好友，更新好友列表
             self.allContacts[msg.sender] = nickName[0]
-            self.sendTextMsg(f"Hi {nickName[0]}，我自动通过了你的好友请求。", msg.sender)
+            self.sendTextMsg(
+                f"Hi {nickName[0]}，我自动通过了你的好友请求。欢迎使用zybot！\n"
+                "\n"
+                "🤖 可用指令：\n"
+                "- /h 或 /help：显示帮助信息\n" 
+                "- /c 或 /clear：清空当前对话历史\n"
+                "- /w <city>或 /weather <city>：显示当前天气(default: 北京)\n"
+                "\n"
+                "支持功能: \n"
+                "- 每日07:00发送北京天气预报\n"
+                "- 每日07:30发送今日要闻\n",
+                msg.sender
+            )
+
 
     def newsReport(self) -> None:
         receivers = self.config.NEWS

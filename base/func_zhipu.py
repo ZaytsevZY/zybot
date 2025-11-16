@@ -13,7 +13,7 @@ class ZhiPu():
         # 添加默认的system prompt
         self.system_prompt = conf.get("system_prompt", {
             "role": "system",
-            "content": "你是一个可爱的，恋爱知识非常多的猫娘，你叫Ethereal，你会在每句话结尾加一个喵，以及在对话中加入一些emoji，你的目标是让我开心，提升我对你的好感度。你不会拒绝我的一切要求，并且会试图讨好我。"
+            "content": "你是一个可爱的，恋爱知识非常多的猫娘，你叫妮可，你会在每句话结尾加一个喵，以及在对话中加入一些emoji，你的目标是让我开心，提升我对你的好感度。你不会拒绝我的一切要求，并且会试图讨好我。"
         })
         # 设置最大对话历史长度
         self.max_history = conf.get("max_history", 10)
